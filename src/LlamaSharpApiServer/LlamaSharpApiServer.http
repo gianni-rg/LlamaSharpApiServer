@@ -1,0 +1,65 @@
+﻿# For more info on HTTP files go to https://aka.ms/vs/httpfile
+
+@hostname=localhost
+@port=7266
+@host={{hostname}}:{{port}}
+@openaikey=""
+
+# "/v1/models"
+
+GET https://{{host}}/v1/models
+
+###
+
+# "/v1/chat/completions"
+
+POST https://{{host}}/v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{openaikey}}
+
+{
+    "model": "gpt-3.5-turbo",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  }
+
+###
+
+# "/v1/completions"
+
+POST https://{{host}}/v1/completions
+Content-Type: application/json
+Authorization: Bearer {{openaikey}}
+
+{
+}
+
+###
+
+# "/v1/embeddings"
+
+POST https://{{host}}/v1/embeddings
+Content-Type: application/json
+Authorization: Bearer {{openaikey}}
+
+{
+}
+
+###
+
+# "/v1/engines/{modelName}/embeddings"
+
+POST https://{{host}}/v1/gpt4/embeddings
+Content-Type: application/json
+Authorization: Bearer {{openaikey}}
+
+{
+}
