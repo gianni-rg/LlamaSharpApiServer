@@ -1,4 +1,4 @@
-namespace LlamaSharpApiServer.Models;
+namespace LlamaSharpApiServer.Models.OpenAI;
 
 public class CompletionRequest
 {
