@@ -4,6 +4,7 @@ using LLama;
 using LLama.Common;
 using LlamaSharpApiServer.Extensions;
 using LlamaSharpApiServer.Interfaces;
+using LlamaSharpApiServer.Models;
 using LlamaSharpApiServer.Models.Internal;
 using LlamaSharpApiServer.Models.OpenAI;
 using System;
@@ -11,11 +12,11 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text;
-using static System.Net.Mime.MediaTypeNames;
 
 public class LlamacppService : ILLMService, IDisposable
 {
     #region Private fields
+    private readonly AppSettings _settings;
     private readonly ChatSession _session;
     private readonly LLamaWeights _model;
     private readonly LLamaContext _context;
@@ -27,15 +28,14 @@ public class LlamacppService : ILLMService, IDisposable
     #endregion
 
     #region Constructor
-    public LlamacppService()
+    public LlamacppService(AppSettings settings)
     {
-        // TODO: read params from config or an external file
-        var modelPath = @"D:\Personal\GitHub\TheBloke-Llama-2-13B-chat-GGUF\llama-2-13b-chat.Q5_K_M.gguf";
-        var parameters = new ModelParams(modelPath)
+        _settings = settings;
+
+        var parameters = new ModelParams(Path.Combine(_settings.ModelsPath, _settings.Model))
         {
-            ContextSize = 1024,
-            Seed = 1337,
-            GpuLayerCount = 5
+            ContextSize = _settings.ModelSettings.ContextSize,
+            Seed = _settings.ModelSettings.Seed
         };
 
         _model = LLamaWeights.LoadFromFile(parameters);
