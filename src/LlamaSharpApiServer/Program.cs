@@ -4,9 +4,9 @@ using LlamaSharpApiServer.Interfaces;
 using LlamaSharpApiServer.Models.OpenAI;
 using LlamaSharpApiServer.Services;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Reflection.Metadata.Ecma335;
 
 /// <summary>
 /// A server that provides OpenAI-compatible RESTful APIs. It supports:<br/>
@@ -54,13 +54,17 @@ public class Program
 
         app.MapGet("/", () => "LlamaSharpApiServer (OpenAI-compatible RESTful APIs)");
         app.MapGet("/v1/models", () => llamaService.ShowAvailableModels());
-        app.MapPost("/v1/chat/completions", (ChatCompletionRequest request) => llamaService.CreateChatCompletionAsync(request));
+        //app.MapPost("/v1/chat/completions", (ChatCompletionRequest request) => llamaService.CreateChatCompletionAsync(request));
+        app.MapPost("/v1/chat/completions", (ChatCompletionRequest request) => llamaService.CreateChatCompletionStream(request));
         app.MapPost("/v1/completions", () => (CompletionRequest request) => llamaService.CreateCompletion(request));
         app.MapPost("/v1/embeddings", () => (EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
         app.MapPost("/v1/engines/{modelName}/embeddings", (string modelName, EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
 
         var port = app.Services.GetRequiredService<IOptions<Models.AppSettings>>().Value.ServerPort;
-        app.Urls.Add($"https://*:{port}");
+
+        // Serve the application on HTTP port, otherwise Continue.dev will fail with certificate error
+        app.Urls.Add($"http://*:{port}");
+
         app.Run();
     }
 }

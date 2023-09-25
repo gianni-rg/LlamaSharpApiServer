@@ -7,10 +7,12 @@ using LlamaSharpApiServer.Interfaces;
 using LlamaSharpApiServer.Models;
 using LlamaSharpApiServer.Models.Internal;
 using LlamaSharpApiServer.Models.OpenAI;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 
 public class LlamacppService : ILLMService, IDisposable
@@ -103,9 +105,10 @@ public class LlamacppService : ILLMService, IDisposable
 
         if (request.stream)
         {
-            //TODO: add streaming support
-            //var generator = chat_completion_stream_generator(request.model, gen_params, request.n, worker_addr);
-            //return StreamingResponse(generator, media_type = "text/event-stream")
+            // Handled by CreateChatCompletionStream
+            throw new InvalidOperationException("CreateChatCompletionAsync called, instead of CreateChatCompletionStream");
+            //var generator = GenerateCompletionStreamGenerator(request);
+            //return new StreamingResponse(generator, media_type = "text/event-stream")
         }
 
         var choices = new List<ChatCompletionResponseChoice>();
@@ -165,6 +168,56 @@ public class LlamacppService : ILLMService, IDisposable
             choices = choices,
             usage = usage
         };
+    }
+
+    /// <summary>
+    /// Creates a completion for the chat message (streaming)<br />
+    /// Event stream format:<br />
+    /// https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
+    /// </summary>
+    public async IAsyncEnumerable<ChatCompletionResponse> CreateChatCompletionStream(ChatCompletionRequest request)
+    {
+        var id = $"chatcmpl-{Guid.NewGuid}";
+        var finish_stream_events = new List<object>();
+        for(int i = 0; i<request.n; i++)
+        {
+            // First chunk with role
+            //var choice_data = new ChatCompletionResponseStreamChoice(index = i, delta = new DeltaMessage() { role = "assistant" }, finish_reason = null);
+            //var chunk = new ChatCompletionStreamResponse(id = id, choices = [choice_data], model = model_name);
+            //yield return $"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n";
+
+            //var previous_text = "";
+            //await foreach(var content in GenerateCompletionStream(gen_params, worker_addr))
+            //{
+            //    if (content["error_code"] != 0)
+            //    {
+            //        yield return $"data: {json.dumps(content, ensure_ascii=False)}\n\n";
+            //        yield return "data: [DONE]\n\n";
+            //    }
+                //decoded_unicode = content["text"].replace("\ufffd", "")
+                //delta_text = decoded_unicode[len(previous_text) :]
+                //previous_text = decoded_unicode
+
+                //if len(delta_text) == 0:
+                //    delta_text = None
+                //choice_data = ChatCompletionResponseStreamChoice(
+                //    index = i,
+                //    delta = DeltaMessage(content = delta_text),
+                //    finish_reason = content.get("finish_reason", None),
+                //)
+                //chunk = ChatCompletionStreamResponse(
+                //    id = id, choices = [choice_data], model = model_name
+                //)
+                //if delta_text is None:
+                //    if content.get("finish_reason", None) is not None:
+                //        finish_stream_events.append(chunk)
+                //    continue
+                //yield f"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n"
+            //# There is not "content" field in the last delta message, so exclude_none to exclude field "content".
+            //for finish_chunk in finish_stream_events:
+            //    yield f"data: {finish_chunk.json(exclude_none=True, ensure_ascii=False)}\n\n"
+            //yield "data: [DONE]\n\n"
+        }
     }
 
     public CompletionResponse CreateCompletion(CompletionRequest request)
@@ -293,6 +346,15 @@ public class LlamacppService : ILLMService, IDisposable
         res.Usage.TotalTokens = tokenizedOutput.Length + tokenizedInput.Length;
 
         return res;
+    }
+
+    private async IAsyncEnumerable<string> GenerateCompletionStream(GenerationParameters parameters)
+    {       
+        var outputs = _session.ChatAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } });
+        await foreach (var output in outputs)
+        {
+            yield return output;
+        }
     }
 
     // llama2 template
