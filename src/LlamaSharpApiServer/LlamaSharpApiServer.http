@@ -7,18 +7,18 @@
 
 # "/v1/models"
 
-GET https://{{host}}/v1/models
+GET http://{{host}}/v1/models
 
 ###
 
 # "/v1/chat/completions"
 
-POST https://{{host}}/v1/chat/completions
+POST http://{{host}}/v1/chat/completions
 Content-Type: application/json
 Authorization: Bearer {{openaikey}}
 
 {
-    "model": "gpt-3.5-turbo",
+    "model": "llama-2",
     "messages": [
       {
         "role": "system",
@@ -33,9 +33,32 @@ Authorization: Bearer {{openaikey}}
 
 ###
 
+# "/v1/chat/completions"
+
+POST http://{{host}}/v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{openaikey}}
+
+{
+    "model": "llama-2",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ],
+    "stream":true
+}
+
+###
+
 # "/v1/completions"
 
-POST https://{{host}}/v1/completions
+POST http://{{host}}/v1/completions
 Content-Type: application/json
 Authorization: Bearer {{openaikey}}
 
@@ -46,7 +69,7 @@ Authorization: Bearer {{openaikey}}
 
 # "/v1/embeddings"
 
-POST https://{{host}}/v1/embeddings
+POST http://{{host}}/v1/embeddings
 Content-Type: application/json
 Authorization: Bearer {{openaikey}}
 
@@ -57,7 +80,7 @@ Authorization: Bearer {{openaikey}}
 
 # "/v1/engines/{modelName}/embeddings"
 
-POST https://{{host}}/v1/gpt4/embeddings
+POST http://{{host}}/v1/gpt4/embeddings
 Content-Type: application/json
 Authorization: Bearer {{openaikey}}
 

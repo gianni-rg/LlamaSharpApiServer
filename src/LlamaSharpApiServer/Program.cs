@@ -4,9 +4,10 @@ using LlamaSharpApiServer.Interfaces;
 using LlamaSharpApiServer.Models.OpenAI;
 using LlamaSharpApiServer.Services;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using System.Reflection.Metadata.Ecma335;
+using System.IO;
 
 /// <summary>
 /// A server that provides OpenAI-compatible RESTful APIs. It supports:<br/>
@@ -45,17 +46,37 @@ public class Program
         app.UseCors();
 
         //if (app.Environment.IsDevelopment())
-        {
-            app.UseSwagger();
-            app.UseSwaggerUI();
-        }
+        //{
+        //    app.UseSwagger();
+        //    app.UseSwaggerUI();
+        //}
 
         var llamaService = app.Services.GetRequiredService<ILLMService>();
 
         app.MapGet("/", () => "LlamaSharpApiServer (OpenAI-compatible RESTful APIs)");
         app.MapGet("/v1/models", () => llamaService.ShowAvailableModels());
-        //app.MapPost("/v1/chat/completions", (ChatCompletionRequest request) => llamaService.CreateChatCompletionAsync(request));
-        app.MapPost("/v1/chat/completions", (ChatCompletionRequest request) => llamaService.CreateChatCompletionStream(request));
+
+        app.MapPost("/v1/chat/completions", async Task<IResult> (ChatCompletionRequest request, HttpContext http) =>
+        {
+            if(request.stream)
+            {
+                http.Response.Headers.CacheControl = "no-cache";
+                http.Response.Headers.ContentType = "text/event-stream";
+                await http.Response.Body.FlushAsync();
+                await foreach(var content in llamaService.CreateChatCompletionStream(request))
+                {
+                    await http.Response.WriteAsync(content);
+                    await http.Response.Body.FlushAsync();
+                    //return Results.Text(content, "text/event-stream", System.Text.Encoding.UTF8);
+                }
+                return Results.Empty;
+            }
+            else
+            {
+                return Results.Ok(await llamaService.CreateChatCompletionAsync(request));
+            }
+        });
+
         app.MapPost("/v1/completions", () => (CompletionRequest request) => llamaService.CreateCompletion(request));
         app.MapPost("/v1/embeddings", () => (EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
         app.MapPost("/v1/engines/{modelName}/embeddings", (string modelName, EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));

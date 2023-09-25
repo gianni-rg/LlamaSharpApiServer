@@ -8,7 +8,7 @@ public interface ILLMService
 
     Task<ChatCompletionResponse> CreateChatCompletionAsync(ChatCompletionRequest request);
 
-    IAsyncEnumerable<ChatCompletionResponse> CreateChatCompletionStream(ChatCompletionRequest request);
+    IAsyncEnumerable<string> CreateChatCompletionStream(ChatCompletionRequest request);
 
     CompletionResponse CreateCompletion(CompletionRequest request);
 

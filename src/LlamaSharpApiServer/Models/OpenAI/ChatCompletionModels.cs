@@ -23,7 +23,7 @@ public class ChatCompletionResponse
     public string _object = "chat.completion";
     public int created { get; set; }
     public string model { get; set; }
-    public List<ChatCompletionResponseChoice> choices { get; set; }
+    public ChatCompletionResponseChoice[] choices { get; set; }
     public UsageInfo usage { get; set; }
 }
 
@@ -83,10 +83,11 @@ public class ChatCompletionFunctionCall
     public string arguments { get; set; }
 }
 
+
 public class ChatCompletionChunkResponse
 {
     public string id { get; set; }
-    public string _object => "chat.completion.chunk";
+    public string _object = "chat.completion.chunk";
     public int created { get; set; }
     public string model { get; set; }
     public ChatCompletionChunkResponseChoice[] choices { get; set; }
@@ -95,11 +96,6 @@ public class ChatCompletionChunkResponse
 public class ChatCompletionChunkResponseChoice
 {
     public int index { get; set; }
-    public ChatCompletionDeltaMessage delta { get; set; }
-    public string finish_reason { get; set; }
-}
-
-public class ChatCompletionDeltaMessage
-{
-    public string content { get; set; }
+    public ChatCompletionMessage delta { get; set; }
+    public string? finish_reason { get; set; }
 }
