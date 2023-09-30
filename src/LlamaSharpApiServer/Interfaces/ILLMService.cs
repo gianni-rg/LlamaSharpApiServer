@@ -10,7 +10,8 @@ public interface ILLMService
 
     IAsyncEnumerable<string> CreateChatCompletionStream(ChatCompletionRequest request);
 
-    CompletionResponse CreateCompletion(CompletionRequest request);
+    Task<CompletionResponse> CreateCompletionAsync(CompletionRequest request);
+    IAsyncEnumerable<string> CreateCompletionStream(CompletionRequest request);
 
     EmbeddingsResponse CreateEmbeddings(EmbeddingsRequest request);
 }

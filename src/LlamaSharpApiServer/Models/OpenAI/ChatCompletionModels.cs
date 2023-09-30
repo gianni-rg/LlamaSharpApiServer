@@ -21,7 +21,7 @@ public class ChatCompletionResponse
 {
     public string id { get; set; }
     public string _object = "chat.completion";
-    public int created { get; set; }
+    public long created { get; set; }
     public string model { get; set; }
     public ChatCompletionResponseChoice[] choices { get; set; }
     public UsageInfo usage { get; set; }

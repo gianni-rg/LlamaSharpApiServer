@@ -4,7 +4,6 @@ using LlamaSharpApiServer.Interfaces;
 using LlamaSharpApiServer.Models.OpenAI;
 using LlamaSharpApiServer.Services;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using System.IO;
@@ -45,11 +44,11 @@ public class Program
 
         app.UseCors();
 
-        //if (app.Environment.IsDevelopment())
-        //{
-        //    app.UseSwagger();
-        //    app.UseSwaggerUI();
-        //}
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
 
         var llamaService = app.Services.GetRequiredService<ILLMService>();
 
@@ -58,27 +57,59 @@ public class Program
 
         app.MapPost("/v1/chat/completions", async Task<IResult> (ChatCompletionRequest request, HttpContext http) =>
         {
-            if(request.stream)
+            try
             {
-                http.Response.Headers.CacheControl = "no-cache";
-                http.Response.Headers.ContentType = "text/event-stream";
-                await http.Response.Body.FlushAsync();
-                await foreach(var content in llamaService.CreateChatCompletionStream(request))
+                if (request.stream)
                 {
-                    await http.Response.WriteAsync(content);
+                    http.Response.Headers.CacheControl = "no-cache";
+                    http.Response.Headers.ContentType = "text/event-stream";
                     await http.Response.Body.FlushAsync();
-                    //return Results.Text(content, "text/event-stream", System.Text.Encoding.UTF8);
+                    await foreach (var content in llamaService.CreateChatCompletionStream(request))
+                    {
+                        await http.Response.WriteAsync(content);
+                        await http.Response.Body.FlushAsync();
+                    }
+                    return Results.Empty;
                 }
-                return Results.Empty;
+                else
+                {
+                    return Results.Ok(await llamaService.CreateChatCompletionAsync(request));
+                }
             }
-            else
+            catch (Exception ex)
             {
-                return Results.Ok(await llamaService.CreateChatCompletionAsync(request));
+                return Results.Problem($"{ex}");
             }
         });
 
-        app.MapPost("/v1/completions", () => (CompletionRequest request) => llamaService.CreateCompletion(request));
-        app.MapPost("/v1/embeddings", () => (EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
+        app.MapPost("/v1/completions", async Task<IResult> (CompletionRequest request, HttpContext http) =>
+        {
+            try
+            {
+                if (request.stream)
+                {
+                    http.Response.Headers.CacheControl = "no-cache";
+                    http.Response.Headers.ContentType = "text/event-stream";
+                    await http.Response.Body.FlushAsync();
+                    await foreach (var content in llamaService.CreateCompletionStream(request))
+                    {
+                        await http.Response.WriteAsync(content);
+                        await http.Response.Body.FlushAsync();
+                    }
+                    return Results.Empty;
+                }
+                else
+                {
+                    return Results.Ok(await llamaService.CreateCompletionAsync(request));
+                }
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"{ex}");
+            }
+        });
+
+        app.MapPost("/v1/embeddings", (EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
         app.MapPost("/v1/engines/{modelName}/embeddings", (string modelName, EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
 
         var port = app.Services.GetRequiredService<IOptions<Models.AppSettings>>().Value.ServerPort;

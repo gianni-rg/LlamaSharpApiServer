@@ -108,13 +108,11 @@ public class LlamacppService : ILLMService, IDisposable
     public async Task<ChatCompletionResponse> CreateChatCompletionAsync(ChatCompletionRequest request)
     {
         //TODO: validate arguments, handle errors
-        
+
         if (request.stream)
         {
             // Handled by CreateChatCompletionStream
             throw new InvalidOperationException("CreateChatCompletionAsync called, instead of CreateChatCompletionStream");
-            //var generator = GenerateCompletionStreamGenerator(request);
-            //return new StreamingResponse(generator, media_type = "text/event-stream")
         }
 
         var choices = new List<ChatCompletionResponseChoice>();
@@ -173,7 +171,8 @@ public class LlamacppService : ILLMService, IDisposable
         {
             model = request.model,
             choices = choices.ToArray(),
-            usage = usage
+            usage = usage,
+            created = DateTime.UtcNow.ToUnixTime()
         };
     }
 
@@ -221,55 +220,139 @@ public class LlamacppService : ILLMService, IDisposable
             yield return $"data: {JsonSerializer.Serialize(chunk, _jsonSerializerOptions)}\n\n";
 
             var previous_text = "";
-            var choices2 = new List<ChatCompletionChunkResponseChoice>
-            {
-                new ChatCompletionChunkResponseChoice()
-                {
-                    index = i,
-                    delta = new ChatCompletionMessage() { role = "assistant ", content = "generated_delta_text" },
-                    finish_reason = "stop"
-                } 
-            };
-            var chunk2 = new ChatCompletionChunkResponse() { id = id, choices = choices2.ToArray(), model = request.model };
-            yield return $"data: {JsonSerializer.Serialize(chunk2, _jsonSerializerOptions)}\n\n";
-            //await foreach(var content in GenerateCompletionStream(gen_params, worker_addr))
+            //var choices2 = new List<ChatCompletionChunkResponseChoice>
             //{
-            //    if (content["error_code"] != 0)
+            //    new ChatCompletionChunkResponseChoice()
             //    {
-            //        yield return $"data: {json.dumps(content, ensure_ascii=False)}\n\n";
-            //        yield return "data: [DONE]\n\n";
+            //        index = i,
+            //        delta = new ChatCompletionMessage() { role = "assistant ", content = "generated_delta_text" },
+            //        finish_reason = "stop"
             //    }
-            //decoded_unicode = content["text"].replace("\ufffd", "")
-            //delta_text = decoded_unicode[len(previous_text) :]
-            //previous_text = decoded_unicode
+            //};
+            //var chunk2 = new ChatCompletionChunkResponse() { id = id, choices = choices2.ToArray(), model = request.model };
+            //yield return $"data: {JsonSerializer.Serialize(chunk2, _jsonSerializerOptions)}\n\n";
+            await foreach (var content in GenerateCompletionStream(genParams))
+            {
+                if (content.ErrorCode != 0)
+                {
+                    yield return $"data: {JsonSerializer.Serialize(content, _jsonSerializerOptions)}\n\n";
+                    yield return "data: [DONE]\n\n";
+                }
 
-            //if len(delta_text) == 0:
-            //    delta_text = None
-            //choice_data = ChatCompletionResponseStreamChoice(
-            //    index = i,
-            //    delta = DeltaMessage(content = delta_text),
-            //    finish_reason = content.get("finish_reason", None),
-            //)
-            //chunk = ChatCompletionStreamResponse(
-            //    id = id, choices = [choice_data], model = model_name
-            //)
-            //if delta_text is None:
-            //    if content.get("finish_reason", None) is not None:
-            //        finish_stream_events.append(chunk)
-            //    continue
-            //yield f"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n"
+                //decoded_unicode = content["text"].replace("\ufffd", "")
+                //delta_text = decoded_unicode[len(previous_text) :]
+                //previous_text = decoded_unicode
 
-            //// There is not "content" field in the last delta message, so exclude_none to exclude field "content".
-            //for finish_chunk in finish_stream_events:
-            //    yield f"data: {finish_chunk.json(exclude_none=True, ensure_ascii=False)}\n\n"
+                //if len(delta_text) == 0:
+                //    delta_text = None
+                //choice_data = ChatCompletionResponseStreamChoice(
+                //    index = i,
+                //    delta = DeltaMessage(content = delta_text),
+                //    finish_reason = content.get("finish_reason", None),
+                //)
+                //chunk = ChatCompletionStreamResponse(
+                //    id = id, choices = [choice_data], model = model_name
+                //)
+                //if delta_text is None:
+                //    if content.get("finish_reason", None) is not None:
+                //        finish_stream_events.append(chunk)
+                //    continue
+                //yield f"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n"
 
+                //// There is not "content" field in the last delta message, so exclude_none to exclude field "content".
+                //for finish_chunk in finish_stream_events:
+                //    yield f"data: {finish_chunk.json(exclude_none=True, ensure_ascii=False)}\n\n"
+            }
             yield return "data: [DONE]\n\n";
         }
     }
 
-    public CompletionResponse CreateCompletion(CompletionRequest request)
+    public async Task<CompletionResponse> CreateCompletionAsync(CompletionRequest request)
     {
-        return new CompletionResponse();
+        if (request.stream)
+        {
+            // Handled by CreateCompletionStream
+            throw new InvalidOperationException("CreateCompletionAsync called, instead of CreateCompletionStream");
+        }
+
+        // TODO: validate arguments, handle errors
+
+        //request.prompt = ProcessInput(request.model, request.prompt);
+
+        CompletionResult[] completion_results;
+        var completions_tasks = new List<Task<CompletionResult>>();
+        //foreach(var text in request.prompt)
+        // TODO: add support for custom serializer, currently only 1 prompt is supported
+        {
+            var text = request.prompt;
+            var genParams = GetGenerationParameters(
+                request.model,
+                new List<ConversationMessage> { new ConversationMessage { Role = "user", Message = text } },
+                request.temperature,
+                request.top_p,
+                request.max_tokens,
+                request.echo,
+                new List<string> { request.stop ?? string.Empty });
+
+            for (int i = 0; i < request.n; i++)
+            {
+                completions_tasks.Add(Task.Run(() => GenerateCompletion(genParams)));
+            }
+        }//foreach
+
+        try
+        {
+            completion_results = await Task.WhenAll(completions_tasks);
+        }
+        catch (Exception e)
+        {
+            throw new Exception("Error in CreateCompletion", e);
+            //TODO: handle error
+            //return create_error_response(ErrorCode.INTERNAL_ERROR, e);
+        }
+
+        var usage = new UsageInfo();
+        var choices = new List<CompletionResponseChoice>();
+        for (int i = 0; i < request.n; i++)
+        {
+            var completion_result = completion_results[i];
+            if (completion_result.ErrorCode != 0)
+            {
+                throw new Exception("Error in CreateCompletion");
+                //TODO: handle error
+                //return create_error_response(content["error_code"], content["text"]);
+            }
+            choices.Add(new CompletionResponseChoice()
+            {
+                index = i,
+                text = completion_result.Text,
+                logprobs = completion_result.LogProbs ?? null,
+                finish_reason = completion_result.FinishReason ?? "stop"
+            });
+        }
+
+        var response = new CompletionResponse()
+        {
+            id = $"cmpl-{Guid.NewGuid}",
+            model = request.model,
+            created = DateTime.UtcNow.ToUnixTime(),
+            usage = usage,
+            choices = choices.ToArray(),
+        };
+        return response;
+    }
+
+    /// <summary>
+    /// Creates a completion for a message (streaming)<br />
+    /// Event stream format:<br />
+    /// https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format<br />
+    /// Possible .NET implementations:<br />
+    /// https://itnext.io/server-side-event-streams-with-dotnet-core-and-typescript-d20c84017480<br />
+    /// https://dev.to/masanori_msl/aspnet-core-try-server-sent-events-5db2
+    /// </summary>
+    public IAsyncEnumerable<string> CreateCompletionStream(CompletionRequest request)
+    {
+        throw new NotImplementedException();
     }
 
     public EmbeddingsResponse CreateEmbeddings(EmbeddingsRequest request)
@@ -382,6 +465,8 @@ public class LlamacppService : ILLMService, IDisposable
 
         var res = new CompletionResult
         {
+            ErrorCode = 0,
+            LogProbs = null,
             Text = outputText.ToString(),
             FinishReason = "stop"
         };
@@ -395,13 +480,32 @@ public class LlamacppService : ILLMService, IDisposable
         return res;
     }
 
-    private async IAsyncEnumerable<string> GenerateCompletionStream(GenerationParameters parameters)
+    private async IAsyncEnumerable<CompletionResult> GenerateCompletionStream(GenerationParameters parameters)
     {
         var outputs = _session.ChatAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } });
+
         await foreach (var output in outputs)
         {
-            yield return output;
+            var res = new CompletionResult
+            {
+                ErrorCode = 0,
+                LogProbs = null,
+                Text = output,
+                FinishReason = null
+            };
+
+            yield return res;
         }
+
+        var finalRes = new CompletionResult
+        {
+            ErrorCode = 0,
+            LogProbs = null,
+            Text = string.Empty,
+            FinishReason = "stop"
+        };
+
+        yield return finalRes;
     }
 
     // llama2 template
