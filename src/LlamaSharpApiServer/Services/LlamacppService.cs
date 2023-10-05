@@ -19,7 +19,8 @@ public class LlamacppService : ILLMService, IDisposable
 {
     #region Private fields
     private readonly AppSettings _settings;
-    private readonly ChatSession _session;
+    //private readonly ChatSession _session;
+    private readonly StatelessExecutor _statelessExecutor;
     private readonly LLamaWeights _model;
     private readonly LLamaContext _context;
 
@@ -54,7 +55,8 @@ public class LlamacppService : ILLMService, IDisposable
                       + "User: ";
 
         // Type of executor should be defined from config or an external file
-        _session = new ChatSession(new InteractiveExecutor(_context));
+        _statelessExecutor = new StatelessExecutor(_model, parameters);
+        //_session = new ChatSession(new InteractiveExecutor(_context));
     }
     #endregion
 
@@ -198,10 +200,12 @@ public class LlamacppService : ILLMService, IDisposable
             false,
             new List<string> { request.stop ?? string.Empty });
 
+        //genParams.MaxNewTokens = 50; // DEBUG
+
         var id = $"chatcmpl-{Guid.NewGuid()}";
         //TODO: port equivalent https://github.com/skorokithakis/shortuuid in C#, like done here: https://blog.codinghorror.com/equipping-our-ascii-armor/
 
-        var finish_stream_events = new List<object>();
+        var finish_stream_events = new List<ChatCompletionChunkResponse>();
         for (int i = 0; i < request.n; i++)
         {
             // First chunk with role
@@ -219,52 +223,58 @@ public class LlamacppService : ILLMService, IDisposable
             var chunk = new ChatCompletionChunkResponse() { id = id, choices = choices.ToArray(), model = request.model };
             yield return $"data: {JsonSerializer.Serialize(chunk, _jsonSerializerOptions)}\n\n";
 
-            var previous_text = "";
-            //var choices2 = new List<ChatCompletionChunkResponseChoice>
-            //{
-            //    new ChatCompletionChunkResponseChoice()
-            //    {
-            //        index = i,
-            //        delta = new ChatCompletionMessage() { role = "assistant ", content = "generated_delta_text" },
-            //        finish_reason = "stop"
-            //    }
-            //};
-            //var chunk2 = new ChatCompletionChunkResponse() { id = id, choices = choices2.ToArray(), model = request.model };
-            //yield return $"data: {JsonSerializer.Serialize(chunk2, _jsonSerializerOptions)}\n\n";
+            //var previous_text = string.Empty;
+
             await foreach (var content in GenerateCompletionStream(genParams))
             {
                 if (content.ErrorCode != 0)
                 {
                     yield return $"data: {JsonSerializer.Serialize(content, _jsonSerializerOptions)}\n\n";
                     yield return "data: [DONE]\n\n";
+                    yield break;
                 }
 
-                //decoded_unicode = content["text"].replace("\ufffd", "")
-                //delta_text = decoded_unicode[len(previous_text) :]
-                //previous_text = decoded_unicode
+                var decoded_unicode = content.Text.Replace("\ufffd", string.Empty);
+                var delta_text = decoded_unicode; // decoded_unicode.Length > previous_text.Length ? decoded_unicode.Substring(previous_text.Length) : decoded_unicode;
+                //previous_text = decoded_unicode.Length > previous_text.Length ? decoded_unicode : previous_text;
 
-                //if len(delta_text) == 0:
-                //    delta_text = None
-                //choice_data = ChatCompletionResponseStreamChoice(
-                //    index = i,
-                //    delta = DeltaMessage(content = delta_text),
-                //    finish_reason = content.get("finish_reason", None),
-                //)
-                //chunk = ChatCompletionStreamResponse(
-                //    id = id, choices = [choice_data], model = model_name
-                //)
-                //if delta_text is None:
-                //    if content.get("finish_reason", None) is not None:
-                //        finish_stream_events.append(chunk)
-                //    continue
-                //yield f"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n"
+                if (delta_text.Length == 0)
+                {
+                    delta_text = string.Empty;
+                }
 
-                //// There is not "content" field in the last delta message, so exclude_none to exclude field "content".
-                //for finish_chunk in finish_stream_events:
-                //    yield f"data: {finish_chunk.json(exclude_none=True, ensure_ascii=False)}\n\n"
+                choice_data = new ChatCompletionChunkResponseChoice()
+                {
+                    index = i,
+                    delta = new ChatCompletionMessage() { content = delta_text },
+                    finish_reason = content.FinishReason ?? null
+                };
+
+                chunk = new ChatCompletionChunkResponse()
+                {
+                    id = id,
+                    choices = new List<ChatCompletionChunkResponseChoice>() { choice_data }.ToArray(),
+                    model = request.model
+                };
+
+                if (string.IsNullOrWhiteSpace(delta_text))
+                {
+                    if (content.FinishReason is not null)
+                    {
+                        finish_stream_events.Add(chunk);
+                    }
+                    continue;
+                }
+
+                yield return $"data: {JsonSerializer.Serialize(chunk, _jsonSerializerOptions)}\n\n";
             }
-            yield return "data: [DONE]\n\n";
         }
+        // There is not "content" field in the last delta message, so exclude_none to exclude field "content".
+        foreach (var finish_chunk in finish_stream_events)
+        {
+            yield return $"data: {JsonSerializer.Serialize(finish_chunk, _jsonSerializerOptions)}\n\n";
+        }
+        yield return "data: [DONE]\n\n";
     }
 
     public async Task<CompletionResponse> CreateCompletionAsync(CompletionRequest request)
@@ -293,6 +303,8 @@ public class LlamacppService : ILLMService, IDisposable
                 request.max_tokens,
                 request.echo,
                 new List<string> { request.stop ?? string.Empty });
+
+            //genParams.MaxNewTokens = 50; // DEBUG
 
             for (int i = 0; i < request.n; i++)
             {
@@ -445,7 +457,7 @@ public class LlamacppService : ILLMService, IDisposable
 
     private Conversation GetConversationTemplate(string modelName)
     {
-        if (modelName.Contains("llama-2"))
+        if (modelName.Contains("llama-2") || modelName.Contains("gpt"))
         {
             return GetLlama2Template();
         }
@@ -457,8 +469,11 @@ public class LlamacppService : ILLMService, IDisposable
 
     private CompletionResult GenerateCompletion(GenerationParameters parameters)
     {
+        Console.WriteLine($"GenerateCompletion: {parameters.Prompt}");
+
         var outputText = new StringBuilder();
-        foreach (var text in _session.Chat(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } }))
+
+        foreach (var text in _statelessExecutor.Infer(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens }))
         {
             outputText.Append(text);
         }
@@ -471,8 +486,8 @@ public class LlamacppService : ILLMService, IDisposable
             FinishReason = "stop"
         };
 
-        var tokenizedInput = _session.Executor.Context.Tokenize(parameters.Prompt);
-        var tokenizedOutput = _session.Executor.Context.Tokenize(res.Text);
+        var tokenizedInput = _statelessExecutor.Context.Tokenize(parameters.Prompt);
+        var tokenizedOutput = _statelessExecutor.Context.Tokenize(res.Text);
         res.Usage.PromptTokens = tokenizedInput.Length;
         res.Usage.CompletionTokens = tokenizedOutput.Length;
         res.Usage.TotalTokens = tokenizedOutput.Length + tokenizedInput.Length;
@@ -482,7 +497,10 @@ public class LlamacppService : ILLMService, IDisposable
 
     private async IAsyncEnumerable<CompletionResult> GenerateCompletionStream(GenerationParameters parameters)
     {
-        var outputs = _session.ChatAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } });
+        Console.WriteLine($"GenerateCompletionStream: {parameters.Prompt}");
+
+        //var outputs = _session.ChatAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } });
+        var outputs = _statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens });
 
         await foreach (var output in outputs)
         {

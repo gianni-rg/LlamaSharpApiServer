@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 /// <summary>
 /// A server that provides OpenAI-compatible RESTful APIs. It supports:<br/>
@@ -59,6 +61,9 @@ public class Program
         {
             try
             {
+                // DEBUG
+                Console.WriteLine(JsonSerializer.Serialize(request));
+
                 if (request.stream)
                 {
                     http.Response.Headers.CacheControl = "no-cache";
@@ -86,6 +91,9 @@ public class Program
         {
             try
             {
+                // DEBUG
+                Console.WriteLine(JsonSerializer.Serialize(request));
+
                 if (request.stream)
                 {
                     http.Response.Headers.CacheControl = "no-cache";
@@ -110,7 +118,7 @@ public class Program
         });
 
         app.MapPost("/v1/embeddings", (EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
-        app.MapPost("/v1/engines/{modelName}/embeddings", (string modelName, EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
+        app.MapPost("/v1/{modelName}/embeddings", (string modelName, EmbeddingsRequest request) => llamaService.CreateEmbeddings(request));
 
         var port = app.Services.GetRequiredService<IOptions<Models.AppSettings>>().Value.ServerPort;
 

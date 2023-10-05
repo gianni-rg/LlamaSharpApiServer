@@ -69,7 +69,7 @@ public class Conversation
             var seps = new List<string> { Sep1, Sep2 };
             if (!string.IsNullOrWhiteSpace(SystemMessage))
             {
-                ret = system_prompt;
+                ret = $"[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n";
             }
             else
             {
