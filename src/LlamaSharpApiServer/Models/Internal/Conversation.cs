@@ -1,3 +1,21 @@
+// Copyright (C) 2023 Gianni Rosa Gallina. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License").
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0.
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Ported/inspired from LM-SYS FastChat project
+// (https://github.com/lm-sys/FastChat)
+// Copyright (C) 2023 LM-SYS team
+
 namespace LlamaSharpApiServer.Models.Internal;
 
 /// <summary>
@@ -5,8 +23,8 @@ namespace LlamaSharpApiServer.Models.Internal;
 /// </summary>
 public record ConversationMessage
 {
-    public string Role { get; set; }
-    public string Message { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }
 
 
@@ -30,11 +48,11 @@ public class Conversation
     /// <summary>
     /// The names of two roles
     /// </summary>
-    public List<string> roles = new List<string> { "USER", "ASSISTANT" };
+    public List<string> roles = ["USER", "ASSISTANT"];
     /// <summary>
     /// All messages in the conversation
     /// </summary>
-    public List<ConversationMessage> Messages { get; set; } = new List<ConversationMessage>();
+    public List<ConversationMessage> Messages { get; set; } = [];
     /// <summary>
     /// The number of few shot examples
     /// </summary>
@@ -48,11 +66,11 @@ public class Conversation
     /// <summary>
     /// Stop criteria (the default one is EOS token)
     /// </summary>
-    public List<string> StopString { get; set; } = new List<string>();
+    public List<string> StopString { get; set; } = [];
     /// <summary>
     /// Stops generation if meeting any token in this list
     /// </summary>
-    public List<int> StopTokenIds { get; set; } = new List<int>();
+    public List<int> StopTokenIds { get; set; } = [];
 
     /// <summary>
     /// Get the prompt for generation.

@@ -1,4 +1,7 @@
-﻿namespace LlamaSharpApiServer.Interfaces;
+﻿// Copyright (C) Gianni Rosa Gallina.
+// Licensed under the Apache License, Version 2.0.
+
+namespace LlamaSharpApiServer.Interfaces;
 
 using LlamaSharpApiServer.Models.OpenAI;
 

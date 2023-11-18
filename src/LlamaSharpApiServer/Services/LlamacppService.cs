@@ -1,3 +1,21 @@
+// Copyright (C) 2023 Gianni Rosa Gallina. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License").
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0.
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Ported/inspired from LM-SYS FastChat project
+// (https://github.com/lm-sys/FastChat)
+// Copyright (C) 2023 LM-SYS team
+
 namespace LlamaSharpApiServer.Services;
 
 using LLama;
@@ -19,21 +37,20 @@ public class LlamacppService : ILLMService, IDisposable
 {
     #region Private fields
     private readonly AppSettings _settings;
-    //private readonly ChatSession _session;
     private readonly StatelessExecutor _statelessExecutor;
     private readonly LLamaWeights _model;
     private readonly LLamaContext _context;
 
-    private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
     };
 
-    private bool _continue = false;
+    //private bool _continue = false;
     private bool _disposedValue = false;
+    //private readonly string _systemPrompt;
 
-    private string _systemPrompt;
     #endregion
 
     #region Constructor
@@ -44,19 +61,19 @@ public class LlamacppService : ILLMService, IDisposable
         var parameters = new ModelParams(Path.Combine(_settings.ModelsPath, _settings.Model))
         {
             ContextSize = _settings.ModelSettings.ContextSize,
-            Seed = _settings.ModelSettings.Seed
+            Seed = _settings.ModelSettings.Seed,
+            GpuLayerCount = _settings.ModelSettings.GpuLayerCount
         };
 
         _model = LLamaWeights.LoadFromFile(parameters);
         _context = _model.CreateContext(parameters);
 
         // System Prompt should be defined from config or an external file
-        _systemPrompt = "Transcript of a dialog, where the User interacts with an Assistant. Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.\n\n"
-                      + "User: ";
+        //_systemPrompt = "Transcript of a dialog, where the User interacts with an Assistant. Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.\n\n"
+        //              + "User: ";
 
         // Type of executor should be defined from config or an external file
         _statelessExecutor = new StatelessExecutor(_model, parameters);
-        //_session = new ChatSession(new InteractiveExecutor(_context));
     }
     #endregion
 
@@ -97,11 +114,11 @@ public class LlamacppService : ILLMService, IDisposable
         // TODO: currently hard-coded, but should be read from config or an external file
         var modelCards = new List<ModelCard>
         {
-            new ModelCard() { id = "llama-2-13b-chat.Q4_K_M.gguf", created = new DateTime(2023, 09, 04, 17, 27, 03, DateTimeKind.Utc).ToUnixTime(), owned_by = "The Bloke" },
-            new ModelCard() { id = "llama-2-13b-chat.Q5_K_M.gguf", created = new DateTime(2023, 09, 04, 17, 29, 58, DateTimeKind.Utc).ToUnixTime(), owned_by = "The Bloke" }
+            new() { id = "llama-2-13b-chat.Q4_K_M.gguf", created = new DateTime(2023, 09, 04, 17, 27, 03, DateTimeKind.Utc).ToUnixTime(), owned_by = "The Bloke" },
+            new() { id = "llama-2-13b-chat.Q5_K_M.gguf", created = new DateTime(2023, 09, 04, 17, 29, 58, DateTimeKind.Utc).ToUnixTime(), owned_by = "The Bloke" }
         };
 
-        return new ModelsResponse() { data = modelCards.ToArray() };
+        return new ModelsResponse() { data = [.. modelCards] };
     }
 
     /// <summary>
@@ -127,7 +144,7 @@ public class LlamacppService : ILLMService, IDisposable
             request.top_p,
             request.max_tokens ?? 512,
             false,
-            new List<string> { request.stop ?? string.Empty });
+            [request.stop ?? string.Empty]);
 
 
         for (int i = 0; i < request.n; i++)
@@ -172,7 +189,7 @@ public class LlamacppService : ILLMService, IDisposable
         return new ChatCompletionResponse()
         {
             model = request.model,
-            choices = choices.ToArray(),
+            choices = [.. choices],
             usage = usage,
             created = DateTime.UtcNow.ToUnixTime()
         };
@@ -198,9 +215,9 @@ public class LlamacppService : ILLMService, IDisposable
             request.top_p,
             request.max_tokens ?? 512,
             false,
-            new List<string> { request.stop ?? string.Empty });
+            [request.stop ?? string.Empty]);
 
-        //genParams.MaxNewTokens = 50; // DEBUG
+        genParams.MaxNewTokens = 50; // DEBUG
 
         var id = $"chatcmpl-{Guid.NewGuid()}";
         //TODO: port equivalent https://github.com/skorokithakis/shortuuid in C#, like done here: https://blog.codinghorror.com/equipping-our-ascii-armor/
@@ -220,7 +237,7 @@ public class LlamacppService : ILLMService, IDisposable
                 choice_data
             };
 
-            var chunk = new ChatCompletionChunkResponse() { id = id, choices = choices.ToArray(), model = request.model };
+            var chunk = new ChatCompletionChunkResponse() { id = id, choices = [.. choices], model = request.model };
             yield return $"data: {JsonSerializer.Serialize(chunk, _jsonSerializerOptions)}\n\n";
 
             //var previous_text = string.Empty;
@@ -253,7 +270,7 @@ public class LlamacppService : ILLMService, IDisposable
                 chunk = new ChatCompletionChunkResponse()
                 {
                     id = id,
-                    choices = new List<ChatCompletionChunkResponseChoice>() { choice_data }.ToArray(),
+                    choices = [choice_data],
                     model = request.model
                 };
 
@@ -297,12 +314,12 @@ public class LlamacppService : ILLMService, IDisposable
             var text = request.prompt;
             var genParams = GetGenerationParameters(
                 request.model,
-                new List<ConversationMessage> { new ConversationMessage { Role = "user", Message = text } },
+                [new() { Role = "user", Message = text }],
                 request.temperature,
                 request.top_p,
                 request.max_tokens,
                 request.echo,
-                new List<string> { request.stop ?? string.Empty });
+                [request.stop ?? string.Empty]);
 
             //genParams.MaxNewTokens = 50; // DEBUG
 
@@ -349,7 +366,7 @@ public class LlamacppService : ILLMService, IDisposable
             model = request.model,
             created = DateTime.UtcNow.ToUnixTime(),
             usage = usage,
-            choices = choices.ToArray(),
+            choices = [.. choices],
         };
         return response;
     }
@@ -374,7 +391,7 @@ public class LlamacppService : ILLMService, IDisposable
     #endregion
 
     #region Private methods
-    private GenerationParameters GetGenerationParameters(string modelName, List<ConversationMessage> messages, float temperature, float topP, int maxTokens, bool echo, List<string> stopStrings)
+    private static GenerationParameters GetGenerationParameters(string modelName, List<ConversationMessage> messages, float temperature, float topP, int maxTokens, bool echo, List<string> stopStrings)
     {
         var convTemplate = GetConversationTemplate(modelName);
 
@@ -450,12 +467,12 @@ public class LlamacppService : ILLMService, IDisposable
             newStopStrings.Add(stopString);
         };
 
-        gen_params.Stop = newStopStrings.ToList();
+        gen_params.Stop = [.. newStopStrings];
 
         return gen_params;
     }
 
-    private Conversation GetConversationTemplate(string modelName)
+    private static Conversation GetConversationTemplate(string modelName)
     {
         if (modelName.Contains("llama-2") || modelName.Contains("gpt"))
         {
@@ -467,13 +484,13 @@ public class LlamacppService : ILLMService, IDisposable
         }
     }
 
-    private CompletionResult GenerateCompletion(GenerationParameters parameters)
+    private async Task<CompletionResult> GenerateCompletion(GenerationParameters parameters)
     {
         Console.WriteLine($"GenerateCompletion: {parameters.Prompt}");
 
         var outputText = new StringBuilder();
 
-        foreach (var text in _statelessExecutor.Infer(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens }))
+        await foreach (var text in _statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens }))
         {
             outputText.Append(text);
         }
@@ -529,13 +546,13 @@ public class LlamacppService : ILLMService, IDisposable
     // llama2 template
     // reference: https://huggingface.co/blog/codellama#conversational-instructions
     // reference: https://github.com/facebookresearch/llama/blob/1a240688810f8036049e8da36b073f63d2ac552c/llama/generation.py#L212
-    private Conversation GetLlama2Template()
+    private static Conversation GetLlama2Template()
     {
         return new Conversation()
         {
             Name = "llama-2",
             SystemTemplate = "[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n",
-            roles = new List<string> { "[INST]", "[/INST]" },
+            roles = ["[INST]", "[/INST]"],
             SepStyle = 0, //SeparatorStyle.LLAMA2,
             Sep1 = " ",
             Sep2 = " </s><s>",
