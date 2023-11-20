@@ -75,6 +75,8 @@ public class Program
             try
             {
                 // DEBUG
+                request.max_tokens = 256;
+
                 //Console.WriteLine(JsonSerializer.Serialize(request));
 
                 if (request.stream)

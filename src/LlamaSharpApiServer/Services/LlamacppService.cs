@@ -11,10 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Ported/inspired from LM-SYS FastChat project
-// (https://github.com/lm-sys/FastChat)
-// Copyright (C) 2023 LM-SYS team
 
 namespace LlamaSharpApiServer.Services;
 
@@ -37,8 +33,9 @@ public class LlamacppService : ILLMService, IDisposable
 {
     #region Private fields
     private readonly AppSettings _settings;
-    private readonly StatelessExecutor _statelessExecutor;
+    //private readonly StatelessExecutor _statelessExecutor;
     private readonly LLamaWeights _model;
+    private readonly ModelParams _modelParams;
     private readonly LLamaContext _context;
 
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
@@ -58,22 +55,19 @@ public class LlamacppService : ILLMService, IDisposable
     {
         _settings = settings;
 
-        var parameters = new ModelParams(Path.Combine(_settings.ModelsPath, _settings.Model))
+        _modelParams = new ModelParams(Path.Combine(_settings.ModelsPath, _settings.Model))
         {
             ContextSize = _settings.ModelSettings.ContextSize,
             Seed = _settings.ModelSettings.Seed,
             GpuLayerCount = _settings.ModelSettings.GpuLayerCount
         };
 
-        _model = LLamaWeights.LoadFromFile(parameters);
-        _context = _model.CreateContext(parameters);
+        _model = LLamaWeights.LoadFromFile(_modelParams);
+        _context = _model.CreateContext(_modelParams);
 
         // System Prompt should be defined from config or an external file
         //_systemPrompt = "Transcript of a dialog, where the User interacts with an Assistant. Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.\n\n"
         //              + "User: ";
-
-        // Type of executor should be defined from config or an external file
-        _statelessExecutor = new StatelessExecutor(_model, parameters);
     }
     #endregion
 
@@ -86,7 +80,6 @@ public class LlamacppService : ILLMService, IDisposable
             {
                 // Dispose managed state (managed objects)
                 _model.Dispose();
-                _context?.Dispose();
             }
 
             // Free unmanaged resources (unmanaged objects) and override finalizer
@@ -159,7 +152,7 @@ public class LlamacppService : ILLMService, IDisposable
         }
         catch (Exception e)
         {
-            throw new Exception("Error in CreateChatCompletion", e);
+            throw new Exception($"Error in CreateChatCompletionAsync: {e.Message}", e);
             //TODO: handle error
             //return create_error_response(ErrorCode.INTERNAL_ERROR, e);
         }
@@ -170,7 +163,7 @@ public class LlamacppService : ILLMService, IDisposable
             var chat_completion_result = chat_completion_results[i];
             if (chat_completion_result.ErrorCode != 0)
             {
-                throw new Exception("Error in CreateChatCompletion");
+                throw new Exception($"Error in CreateChatCompletionAsync (ErrorCode: {chat_completion_result.ErrorCode})");
                 //TODO: handle error
                 //return create_error_response(content["error_code"], content["text"]);
             }
@@ -217,7 +210,7 @@ public class LlamacppService : ILLMService, IDisposable
             false,
             [request.stop ?? string.Empty]);
 
-        genParams.MaxNewTokens = 50; // DEBUG
+        //genParams.MaxNewTokens = 50; // DEBUG
 
         var id = $"chatcmpl-{Guid.NewGuid()}";
         //TODO: port equivalent https://github.com/skorokithakis/shortuuid in C#, like done here: https://blog.codinghorror.com/equipping-our-ascii-armor/
@@ -335,7 +328,7 @@ public class LlamacppService : ILLMService, IDisposable
         }
         catch (Exception e)
         {
-            throw new Exception("Error in CreateCompletion", e);
+            throw new Exception($"Error in CreateCompletionAsync: {e.Message}", e);
             //TODO: handle error
             //return create_error_response(ErrorCode.INTERNAL_ERROR, e);
         }
@@ -347,7 +340,7 @@ public class LlamacppService : ILLMService, IDisposable
             var completion_result = completion_results[i];
             if (completion_result.ErrorCode != 0)
             {
-                throw new Exception("Error in CreateCompletion");
+                throw new Exception($"Error in CreateCompletionAsync (ErrorCode: {completion_result.ErrorCode})");
                 //TODO: handle error
                 //return create_error_response(content["error_code"], content["text"]);
             }
@@ -486,14 +479,19 @@ public class LlamacppService : ILLMService, IDisposable
 
     private async Task<CompletionResult> GenerateCompletion(GenerationParameters parameters)
     {
-        Console.WriteLine($"GenerateCompletion: {parameters.Prompt}");
+        //Console.WriteLine($"GenerateCompletion: {parameters.Prompt}");
+
+        // Type of executor should be defined from config or an external file
+        var statelessExecutor = new StatelessExecutor(_model, _modelParams);
 
         var outputText = new StringBuilder();
 
-        await foreach (var text in _statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens }))
+        await foreach (var text in statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens }))
         {
             outputText.Append(text);
         }
+        
+        statelessExecutor.Context.Dispose();
 
         var res = new CompletionResult
         {
@@ -503,8 +501,8 @@ public class LlamacppService : ILLMService, IDisposable
             FinishReason = "stop"
         };
 
-        var tokenizedInput = _statelessExecutor.Context.Tokenize(parameters.Prompt);
-        var tokenizedOutput = _statelessExecutor.Context.Tokenize(res.Text);
+        var tokenizedInput = _context.Tokenize(parameters.Prompt);
+        var tokenizedOutput = _context.Tokenize(res.Text);
         res.Usage.PromptTokens = tokenizedInput.Length;
         res.Usage.CompletionTokens = tokenizedOutput.Length;
         res.Usage.TotalTokens = tokenizedOutput.Length + tokenizedInput.Length;
@@ -514,10 +512,13 @@ public class LlamacppService : ILLMService, IDisposable
 
     private async IAsyncEnumerable<CompletionResult> GenerateCompletionStream(GenerationParameters parameters)
     {
-        Console.WriteLine($"GenerateCompletionStream: {parameters.Prompt}");
+        //Console.WriteLine($"GenerateCompletionStream: {parameters.Prompt}");
+
+        // Type of executor should be defined from config or an external file
+        var statelessExecutor = new StatelessExecutor(_model, _modelParams);
 
         //var outputs = _session.ChatAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" } });
-        var outputs = _statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens });
+        var outputs = statelessExecutor.InferAsync(parameters.Prompt, new InferenceParams() { Temperature = parameters.Temperature, AntiPrompts = new List<string> { "User:" }, MaxTokens = parameters.MaxNewTokens });
 
         await foreach (var output in outputs)
         {
@@ -539,6 +540,8 @@ public class LlamacppService : ILLMService, IDisposable
             Text = string.Empty,
             FinishReason = "stop"
         };
+
+        statelessExecutor.Context.Dispose();
 
         yield return finalRes;
     }
